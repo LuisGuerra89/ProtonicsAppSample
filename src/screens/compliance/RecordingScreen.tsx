@@ -1,5 +1,5 @@
 import React, {useEffect, useCallback} from 'react';
-import {View, Text, StyleSheet, Alert, ScrollView} from 'react-native';
+import {View, Text, StyleSheet, Alert, ScrollView, PermissionsAndroid, Platform} from 'react-native';
 import {ScreenContainer, Button, Card, MetricCard} from '../../components';
 import {Colors, FontSize, Spacing, Config, TAB_BAR_HEIGHT} from '../../constants';
 import {useComplianceStore} from '../../store';
@@ -40,8 +40,34 @@ export function RecordingScreen({navigation}: Props) {
     };
   }, []);
 
+  const requestPermissions = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {return true;}
+    try {
+      const results = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+        PermissionsAndroid.PERMISSIONS.BODY_SENSORS,
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      ]);
+      const activityGranted =
+        results[PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+      if (!activityGranted) {
+        Alert.alert(
+          'Permission Required',
+          'Activity Recognition permission is needed to start a walk assessment. Please grant it in Settings.',
+        );
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const startRecording = useCallback(async () => {
     try {
+      const hasPermissions = await requestPermissions();
+      if (!hasPermissions) {return;}
       setLiveSteps(0);
       setRecording(true);
       setRecorderState('RECORDING');
