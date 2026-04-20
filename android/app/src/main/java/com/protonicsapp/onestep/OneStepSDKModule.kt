@@ -4,6 +4,7 @@ import android.util.Log
 import co.onestep.android.core.OSTActivityType
 import co.onestep.android.core.OSTParamName
 import co.onestep.android.core.OSTResult
+import co.onestep.android.core.OSTState
 import co.onestep.android.core.OSTUserAttributes
 import co.onestep.android.core.OneStep
 import co.onestep.android.core.motionLab.OSTAnalyserState
@@ -40,6 +41,7 @@ class OneStepSDKModule(reactContext: ReactApplicationContext) :
         try {
             val app = reactApplicationContext.applicationContext as android.app.Application
             OneStep.initialize(application = app, clientToken = clientToken)
+            observeSDKState()
             observeRecorderState()
             observeAnalyserState()
             observeSteps()
@@ -263,7 +265,74 @@ class OneStepSDKModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    // ── HMAC-SHA256 (dev/testing only — compute on backend in production) ──
+
+    @ReactMethod
+    fun buildHmac(userId: String, secret: String, promise: Promise) {
+        try {
+            val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+            mac.init(javax.crypto.spec.SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+            val hex = mac.doFinal(userId.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            promise.resolve(hex)
+        } catch (e: Exception) {
+            promise.reject("HMAC_ERROR", e.message, e)
+        }
+    }
+
     // ── Event Observers ────────────────────────────────────
+
+    private fun observeSDKState() {
+        scope.launch {
+            OneStep.state.collect { state ->
+                val map = Arguments.createMap()
+                val label: String
+                when (state) {
+                    is OSTState.Uninitialized -> {
+                        label = "Uninitialized"
+                        map.putString("state", label)
+                        map.putString("userId", "")
+                        map.putString("message", "")
+                    }
+                    is OSTState.Ready -> {
+                        label = "Ready"
+                        map.putString("state", label)
+                        map.putString("userId", "")
+                        map.putString("message", "")
+                    }
+                    is OSTState.Identified -> {
+                        label = "Identified"
+                        map.putString("state", label)
+                        map.putString("userId", state.userId)
+                        map.putString("message", "")
+                    }
+                    is OSTState.Error -> {
+                        label = "Error"
+                        map.putString("state", label)
+                        map.putString("userId", "")
+                        map.putString("message", "${state.code}: ${state.message}")
+                    }
+                }
+                // Log before emit — the map is consumed after emit() and cannot be read again
+                Log.d(TAG, "SDK state changed → $label")
+                reactApplicationContext
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    .emit("onSDKStateChange", map)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun getSDKState(promise: Promise) {
+        val map = Arguments.createMap()
+        when (val state = OneStep.state.value) {
+            is OSTState.Uninitialized -> { map.putString("state", "Uninitialized"); map.putString("userId", ""); map.putString("message", "") }
+            is OSTState.Ready        -> { map.putString("state", "Ready");           map.putString("userId", ""); map.putString("message", "") }
+            is OSTState.Identified   -> { map.putString("state", "Identified");      map.putString("userId", state.userId); map.putString("message", "") }
+            is OSTState.Error        -> { map.putString("state", "Error");            map.putString("userId", ""); map.putString("message", "${state.code}: ${state.message}") }
+        }
+        promise.resolve(map)
+    }
 
     private fun observeRecorderState() {
         scope.launch {

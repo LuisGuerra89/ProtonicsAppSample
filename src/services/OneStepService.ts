@@ -1,5 +1,6 @@
 import {NativeModules, NativeEventEmitter, Platform} from 'react-native';
 import type {
+  OSTState,
   OSTMotionMeasurement,
   OSTDailySummary,
   OSTRecorderState,
@@ -123,6 +124,32 @@ export const OneStepService = {
       return;
     }
     return NativeOneStep.enableMockSensors();
+  },
+
+  // ─── HMAC (dev/testing only — use backend in production) ──
+  async buildHmac(userId: string, secret: string): Promise<string> {
+    if (!NativeOneStep) {
+      return '';
+    }
+    return NativeOneStep.buildHmac(userId, secret);
+  },
+
+  // ─── SDK State ────────────────────────────
+  async getSDKState(): Promise<{state: OSTState; userId: string; message: string}> {
+    if (!NativeOneStep) {
+      return {state: 'Uninitialized', userId: '', message: 'Native module not available'};
+    }
+    return NativeOneStep.getSDKState();
+  },
+
+  onSDKStateChange(
+    cb: (info: {state: OSTState; userId: string; message: string}) => void,
+  ): () => void {
+    if (!emitter) {
+      return () => {};
+    }
+    const sub = emitter.addListener('onSDKStateChange', cb);
+    return () => sub.remove();
   },
 
   // ─── Events ───────────────────────────────

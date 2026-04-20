@@ -5,9 +5,10 @@ import {AppNavigator} from './src/navigation';
 import {useAuthStore, useNurtureStore} from './src/store';
 import {OneStepService} from './src/services/OneStepService';
 import {Config} from './src/constants';
+import {SDKStatusBar} from './src/components';
 
 function App() {
-  const {loadPersistedAuth} = useAuthStore();
+  const {loadPersistedAuth, user} = useAuthStore();
   const {loadContent} = useNurtureStore();
 
   useEffect(() => {
@@ -25,10 +26,19 @@ function App() {
           return;
         }
 
-        const identifyResult = await OneStepService.identify(
-          'user-sandbox-test-001',
+        // Use the persisted user id when available, otherwise fall back to
+        // the sandbox test id so the SDK can be exercised without a login.
+        const userId = user?.id ?? 'user-sandbox-test-001';
+
+        // The HMAC-SHA256 is computed by the native bridge using the secret.
+        // WARNING: For development/testing only.
+        // In production, generate the HMAC on your backend and pass it here.
+        const hmac = await OneStepService.buildHmac(
+          userId,
           Config.ONESTEP_IDENTITY_SECRET,
         );
+
+        const identifyResult = await OneStepService.identify(userId, hmac);
         if (!identifyResult.success) {
           console.warn('[OneStep] Identify failed:', identifyResult.message);
           return;
@@ -44,7 +54,9 @@ function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" translucent={false} />
+      {/* Remove SDKStatusBar (or set visible={false}) before shipping to production */}
+      <SDKStatusBar visible={__DEV__} />
       <AppNavigator />
     </SafeAreaProvider>
   );
